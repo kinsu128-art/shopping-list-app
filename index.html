@@ -208,6 +208,8 @@
         <div class="stats" id="stats"></div>
     </div>
 
+    <script src="config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
         const itemInput = document.getElementById('itemInput');
         const addBtn = document.getElementById('addBtn');
@@ -215,10 +217,28 @@
         const emptyMessage = document.getElementById('emptyMessage');
         const stats = document.getElementById('stats');
 
-        let items = JSON.parse(localStorage.getItem('shoppingList')) || [];
+        // Initialize Supabase client
+        const { createClient } = supabase;
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        function saveItems() {
-            localStorage.setItem('shoppingList', JSON.stringify(items));
+        let items = [];
+
+        // Load items from Supabase
+        async function loadItems() {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('shopping_items')
+                    .select('*')
+                    .order('created_at', { ascending: true });
+
+                if (error) throw error;
+
+                items = data || [];
+                renderList();
+            } catch (error) {
+                console.error('Error loading items:', error);
+                alert('아이템을 불러오는데 실패했습니다.');
+            }
         }
 
         function renderList() {
@@ -231,14 +251,14 @@
                 emptyMessage.style.display = 'none';
                 stats.style.display = 'block';
 
-                items.forEach((item, index) => {
+                items.forEach((item) => {
                     const li = document.createElement('li');
                     if (item.checked) li.classList.add('checked');
 
                     li.innerHTML = `
-                        <div class="checkbox" onclick="toggleCheck(${index})"></div>
+                        <div class="checkbox" onclick="toggleCheck(${item.id})"></div>
                         <span class="item-text">${escapeHtml(item.text)}</span>
-                        <button class="delete-btn" onclick="deleteItem(${index})">×</button>
+                        <button class="delete-btn" onclick="deleteItem(${item.id})">×</button>
                     `;
 
                     shoppingList.appendChild(li);
@@ -255,27 +275,60 @@
             return div.innerHTML;
         }
 
-        function addItem() {
+        async function addItem() {
             const text = itemInput.value.trim();
             if (text === '') return;
 
-            items.push({ text, checked: false });
-            saveItems();
-            renderList();
-            itemInput.value = '';
-            itemInput.focus();
+            try {
+                const { data, error } = await supabaseClient
+                    .from('shopping_items')
+                    .insert([{ text, checked: false }])
+                    .select();
+
+                if (error) throw error;
+
+                await loadItems();
+                itemInput.value = '';
+                itemInput.focus();
+            } catch (error) {
+                console.error('Error adding item:', error);
+                alert('아이템을 추가하는데 실패했습니다.');
+            }
         }
 
-        function deleteItem(index) {
-            items.splice(index, 1);
-            saveItems();
-            renderList();
+        async function deleteItem(id) {
+            try {
+                const { error } = await supabaseClient
+                    .from('shopping_items')
+                    .delete()
+                    .eq('id', id);
+
+                if (error) throw error;
+
+                await loadItems();
+            } catch (error) {
+                console.error('Error deleting item:', error);
+                alert('아이템을 삭제하는데 실패했습니다.');
+            }
         }
 
-        function toggleCheck(index) {
-            items[index].checked = !items[index].checked;
-            saveItems();
-            renderList();
+        async function toggleCheck(id) {
+            const item = items.find(i => i.id === id);
+            if (!item) return;
+
+            try {
+                const { error } = await supabaseClient
+                    .from('shopping_items')
+                    .update({ checked: !item.checked })
+                    .eq('id', id);
+
+                if (error) throw error;
+
+                await loadItems();
+            } catch (error) {
+                console.error('Error toggling item:', error);
+                alert('아이템 상태를 변경하는데 실패했습니다.');
+            }
         }
 
         addBtn.addEventListener('click', addItem);
@@ -284,7 +337,8 @@
             if (e.key === 'Enter') addItem();
         });
 
-        renderList();
+        // Load items on page load
+        loadItems();
     </script>
 </body>
 </html>
